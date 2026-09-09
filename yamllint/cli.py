@@ -27,20 +27,13 @@ from yamllint.linter import PROBLEM_LEVELS
 def find_files_recursively(items, conf):
     for item in items:
         if os.path.isdir(item):
-            if conf.is_file_ignored(item):
-                print(f'warning: ignoring {item!r}: it is on the ignore list',
-                      file=sys.stderr)
-                continue
             for root, _dirnames, filenames in os.walk(item):
                 for f in filenames:
                     filepath = os.path.join(root, f)
                     if (conf.is_yaml_file(filepath) and
                             not conf.is_file_ignored(filepath)):
                         yield filepath
-        elif conf.is_file_ignored(item):
-            print(f'warning: ignoring {item!r}: it is on the ignore list',
-                  file=sys.stderr)
-        else:
+        elif not conf.force_exclude or not conf.is_file_ignored(item):
             yield item
 
 
@@ -168,6 +161,9 @@ def run(argv=None):
                               help='custom configuration (as YAML source)')
     parser.add_argument('--list-files', action='store_true', dest='list_files',
                         help='list files to lint and exit')
+    parser.add_argument('--force-exclude', action='store_true',
+                        help='apply ignore patterns to explicitly specified '
+                             'files before opening them')
     parser.add_argument('-f', '--format',
                         choices=('parsable', 'standard', 'colored', 'github',
                                  'auto'),
@@ -212,6 +208,9 @@ def run(argv=None):
         print(e, file=sys.stderr)
         sys.exit(-1)
 
+    if args.force_exclude:
+        conf.force_exclude = True
+
     if conf.locale is not None:
         locale.setlocale(locale.LC_ALL, conf.locale)
 
@@ -226,7 +225,8 @@ def run(argv=None):
         filepath = file.removeprefix('./')
         try:
             with open(file, mode='rb') as f:
-                problems = linter.run(f, conf, filepath)
+                # File selection has already applied global ignore patterns.
+                problems = linter.run(f, conf, filepath, no_ignore=True)
         except OSError as e:
             print(e, file=sys.stderr)
             sys.exit(-1)
